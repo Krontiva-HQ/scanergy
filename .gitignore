@@ -1,0 +1,44 @@
+# Node / Expo
+node_modules/
+apps/expo/node_modules/
+apps/expo/.expo/
+apps/expo/.expo-shared/
+apps/expo/dist/
+apps/expo/build/
+apps/expo/.cache/
+apps/expo/.env
+apps/expo/.env.local
+*.tsbuildinfo
+
+# Python
+source/python/venv/
+source/python/__pycache__/
+source/python/.pytest_cache/
+source/python/.ruff_cache/
+source/python/.mypy_cache/
+source/python/**/*.pyc
+
+# Python runtime artifacts
+source/python/measurement_data.json
+source/python/control.json
+
+# PlatformIO
+source/esp32/.pio/
+source/esp32/.vscode/.browse.c_cpp.db*
+
+# Docker / Env
+*.env
+.env
+.env.local
+.env.*
+infra/compose/.env
+source/python/.env
+
+# Logs
+**/*.log
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+
