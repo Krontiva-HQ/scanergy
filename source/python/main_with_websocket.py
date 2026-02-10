@@ -7,8 +7,6 @@ import asyncio
 import logging
 from datetime import datetime
 from bleak import BleakScanner, BleakClient
-from bleak.backends.device import BLEDevice
-from bleak.backends.scanner import AdvertisementData
 import websockets
 import json
 import time
@@ -333,5 +331,4 @@ if __name__ == "__main__":
         logger.info("Program stopped by user")
     except Exception as e:
         logger.error(f"Program error: {e}")
-
 

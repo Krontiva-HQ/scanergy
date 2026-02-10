@@ -16,7 +16,6 @@ import os
 # Add the parent directory to the path so we can import from main.py
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from main import main as run_laser_meter
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -155,11 +154,8 @@ async def laser_meter_task():
     try:
         logger.info("Starting laser meter task...")
         
-        # Import the measurement callback from main.py
-        from main import decode_measurement
-        
-        # This is a simplified version - in practice, you'd need to modify main.py
-        # to accept a callback function for measurements
+        # Placeholder for integration with main.py measurement pipeline
+        # Modify main.py to emit events or write to shared files as needed
         device_connected = True
         device_error = None
         
@@ -210,5 +206,4 @@ if __name__ == "__main__":
         logger.info("Server stopped by user")
     except Exception as e:
         logger.error(f"Server error: {e}")
-
 
