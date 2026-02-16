@@ -1,0 +1,28 @@
+apiVersion: 1
+
+datasources:
+  - name: Scarnergy-TimescaleDB
+    type: postgres
+    access: proxy
+    url: db:5432
+    database: scarnergy
+    user: postgres
+    secureJsonData:
+      password: ${POSTGRES_PASSWORD}
+    jsonData:
+      sslmode: disable
+      maxOpenConns: 10
+      maxIdleConns: 5
+      connMaxLifetime: 14400
+      postgresVersion: 1500
+      timescaledb: true
+    isDefault: true
+
+  - name: Scarnergy-MQTT
+    type: grafana-mqtt-datasource
+    access: proxy
+    jsonData:
+      uri: tcp://mqtt:1883
+    secureJsonData:
+      username: scarnergy
+      password: ${MQTT_PASSWORD}

@@ -1,0 +1,11 @@
+apiVersion: 1
+providers:
+  - name: Scarnergy
+    orgId: 1
+    folder: Scarnergy
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

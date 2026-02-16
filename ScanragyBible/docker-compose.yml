@@ -1,0 +1,298 @@
+version: '3.8'
+
+# ============================================
+# Scarnergy v2.0 — Full Stack Development
+# ============================================
+# Usage: docker compose up -d
+# Verify: ./scripts/health_check.sh
+
+services:
+
+  # ═══════════════════════════════════════════
+  # DATABASE LAYER
+  # ═══════════════════════════════════════════
+
+  db:
+    image: timescale/timescaledb:latest-pg15
+    container_name: scarnergy-db
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-scarnergy_dev_pass}
+      POSTGRES_DB: scarnergy
+      POSTGRES_USER: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./services/supabase/migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d scarnergy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: scarnergy-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════
+  # SUPABASE SERVICES
+  # ═══════════════════════════════════════════
+
+  rest:
+    image: postgrest/postgrest:v12.0.1
+    container_name: scarnergy-rest
+    ports:
+      - "3001:3000"
+    environment:
+      PGRST_DB_URI: postgres://postgres:${POSTGRES_PASSWORD:-scarnergy_dev_pass}@db:5432/scarnergy
+      PGRST_DB_SCHEMAS: public,storage
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-token-with-at-least-32-characters}
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+    depends_on:
+      db: { condition: service_healthy }
+    restart: unless-stopped
+
+  auth:
+    image: supabase/gotrue:v2.132.3
+    container_name: scarnergy-auth
+    ports:
+      - "9999:9999"
+    environment:
+      GOTRUE_DB_DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-scarnergy_dev_pass}@db:5432/scarnergy?search_path=auth
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_SITE_URL: ${SITE_URL:-http://localhost:3000}
+      GOTRUE_URI_ALLOW_LIST: ""
+      GOTRUE_JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-token-with-at-least-32-characters}
+      GOTRUE_JWT_EXP: 3600
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      GOTRUE_MAILER_AUTOCONFIRM: "true"
+      API_EXTERNAL_URL: ${API_EXTERNAL_URL:-http://localhost:9999}
+      PORT: 9999
+    depends_on:
+      db: { condition: service_healthy }
+    restart: unless-stopped
+
+  realtime:
+    image: supabase/realtime:v2.25.35
+    container_name: scarnergy-realtime
+    ports:
+      - "4000:4000"
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-scarnergy_dev_pass}
+      DB_NAME: scarnergy
+      DB_AFTER_CONNECT_QUERY: "SET search_path TO _realtime"
+      DB_ENC_KEY: supabaserealtime
+      PORT: 4000
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-token-with-at-least-32-characters}
+      REPLICATION_MODE: RLS
+      REPLICATION_POLL_INTERVAL: 100
+      SECURE_CHANNELS: "true"
+      SLOT_NAME: supabase_realtime_rls
+      TEMPORARY_SLOT: "true"
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE:-UpNVntn3cDxHJpq99YMc1T1AQgQpc8kfYTuRgBiYa15BLrx8etQoXz3gZv1/u2oq}
+    depends_on:
+      db: { condition: service_healthy }
+    restart: unless-stopped
+
+  storage:
+    image: supabase/storage-api:v0.43.11
+    container_name: scarnergy-storage
+    ports:
+      - "5000:5000"
+    environment:
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-scarnergy_dev_pass}@db:5432/scarnergy
+      POSTGREST_URL: http://rest:3000
+      PGRST_JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-token-with-at-least-32-characters}
+      STORAGE_BACKEND: file
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+      FILE_SIZE_LIMIT: 52428800  # 50MB
+      TENANT_ID: stub
+    volumes:
+      - storage_data:/var/lib/storage
+    depends_on:
+      db: { condition: service_healthy }
+      rest: { condition: service_started }
+    restart: unless-stopped
+
+  studio:
+    image: supabase/studio:20240101
+    container_name: scarnergy-studio
+    ports:
+      - "3000:3000"
+    environment:
+      STUDIO_PG_META_URL: http://meta:8080
+      SUPABASE_URL: http://rest:3000
+      SUPABASE_REST_URL: http://rest:3000/rest/v1/
+      SUPABASE_ANON_KEY: ${ANON_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0}
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY:-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU}
+    depends_on:
+      rest: { condition: service_started }
+    restart: unless-stopped
+
+  meta:
+    image: supabase/postgres-meta:v0.68.0
+    container_name: scarnergy-meta
+    environment:
+      PG_META_PORT: 8080
+      PG_META_DB_HOST: db
+      PG_META_DB_PORT: 5432
+      PG_META_DB_NAME: scarnergy
+      PG_META_DB_USER: postgres
+      PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD:-scarnergy_dev_pass}
+    depends_on:
+      db: { condition: service_healthy }
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════
+  # IOT LAYER
+  # ═══════════════════════════════════════════
+
+  mqtt:
+    image: eclipse-mosquitto:2
+    container_name: scarnergy-mqtt
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./services/mqtt-broker/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - mqtt_data:/mosquitto/data
+      - mqtt_log:/mosquitto/log
+    healthcheck:
+      test: ["CMD", "mosquitto_sub", "-t", "$$SYS/broker/uptime", "-C", "1", "-W", "3"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  ble-bridge:
+    build:
+      context: ./services/ble-bridge
+      dockerfile: Dockerfile
+    container_name: scarnergy-ble-bridge
+    ports:
+      - "8765:8765"
+    environment:
+      SUPABASE_URL: http://rest:3000
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
+      MQTT_BROKER_HOST: mqtt
+      MQTT_BROKER_PORT: 1883
+      WEBSOCKET_PORT: 8765
+    depends_on:
+      db: { condition: service_healthy }
+      mqtt: { condition: service_healthy }
+    # Note: For actual BLE, use network_mode: host or USB passthrough
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════
+  # AI ENGINE
+  # ═══════════════════════════════════════════
+
+  ai-engine:
+    build:
+      context: ./services/ai-engine
+      dockerfile: Dockerfile
+    container_name: scarnergy-ai-engine
+    ports:
+      - "8500:8500"
+    environment:
+      MODEL_PATH: /app/models
+      SUPABASE_URL: http://rest:3000
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
+    volumes:
+      - ./services/ai-engine/exports:/app/models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8500/health"]
+      interval: 30s
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════
+  # DASHBOARDS
+  # ═══════════════════════════════════════════
+
+  metabase:
+    image: metabase/metabase:v0.48.0
+    container_name: scarnergy-metabase
+    ports:
+      - "3003:3000"
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_HOST: db
+      MB_DB_PORT: 5432
+      MB_DB_DBNAME: metabase
+      MB_DB_USER: postgres
+      MB_DB_PASS: ${POSTGRES_PASSWORD:-scarnergy_dev_pass}
+      JAVA_TOOL_OPTIONS: "-Xmx512m"
+    volumes:
+      - metabase_data:/metabase-data
+    depends_on:
+      db: { condition: service_healthy }
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: scarnergy-grafana
+    ports:
+      - "3030:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-scarnergy_admin}
+      GF_INSTALL_PLUGINS: grafana-mqtt-datasource
+    volumes:
+      - ./services/grafana/provisioning:/etc/grafana/provisioning
+      - ./services/grafana/dashboards:/var/lib/grafana/dashboards
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      db: { condition: service_healthy }
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════
+  # REPORTING
+  # ═══════════════════════════════════════════
+
+  report-engine:
+    build:
+      context: ./services/report-engine
+      dockerfile: Dockerfile
+    container_name: scarnergy-report-engine
+    ports:
+      - "8600:8600"
+    environment:
+      SUPABASE_URL: http://rest:3000
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
+      STORAGE_URL: http://storage:5000
+    depends_on:
+      db: { condition: service_healthy }
+    restart: unless-stopped
+
+# ═══════════════════════════════════════════
+# VOLUMES
+# ═══════════════════════════════════════════
+
+volumes:
+  pgdata:
+    driver: local
+  redis_data:
+    driver: local
+  storage_data:
+    driver: local
+  mqtt_data:
+    driver: local
+  mqtt_log:
+    driver: local
+  metabase_data:
+    driver: local
+  grafana_data:
+    driver: local
